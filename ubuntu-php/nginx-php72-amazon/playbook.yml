@@ -1,0 +1,150 @@
+- name: Nginx_PHP72
+  hosts: webserver
+  become: true
+  become_method: sudo
+  tasks:
+    - name: Update-apt
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        cache_valid_time: 3600
+        force_apt_get: true
+
+    - name: Install-Python-Software-Properties
+      ansible.builtin.apt: 
+        name: software-properties-common
+
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_repository_module.html
+    - name: Add PHP PPA
+      ansible.builtin.apt_repository:
+        repo: 'ppa:ondrej/php'
+    
+    # https://stackoverflow.com/questions/54944080/installing-multiple-packages-in-ansible
+    - name: Install-PHP72
+      ansible.builtin.apt: 
+        name: 
+          - php7.2 
+          - libapache2-mod-php7.2 
+          - php7.2-common 
+          - php7.2-fpm
+          - php7.2-curl 
+          - php7.2-mbstring 
+          - php7.2-xmlrpc
+          - php7.2-mysql
+          - php7.2-gd 
+          - php7.2-xml
+          - php7.2-intl
+          - php7.2-ldap
+          - php7.2-imagick
+          - php7.2-json
+          - php7.2-cli
+          - php7.2-redis
+          - php7.2-soap
+          - php7.2-dev
+          - gcc 
+          - make 
+          - autoconf 
+          - libc-dev 
+          - pkg-config
+          - libssl-dev
+          - librabbitmq-dev
+          - mysql-client
+          - git
+
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
+    - name: Remove "Apache2" package
+      ansible.builtin.apt:
+        name: apache2
+        state: absent
+        
+    # composer install doc: https://www.kjnotes.com/devtools/88
+    - name: Install composer v2
+      ansible.builtin.shell: |
+        php -r "copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');"
+        php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+        rm /tmp/composer-setup.php
+
+    # https://docs.ansible.com/ansible/latest/collections/community/general/pear_module.html
+    - name: Install And Enable PHP AMQP Pkg
+      community.general.pear:
+        name: https://pecl.php.net/get/amqp-1.11.0.tgz
+        state: present
+
+    - name: Enable PHP AMQP Pkg
+      ansible.builtin.shell: |
+        echo extension=amqp.so > /etc/php/7.2/cli/conf.d/20_amqp.ini
+        echo extension=amqp.so > /etc/php/7.2/fpm/conf.d/20_amqp.ini
+
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+    - name: Install And Enable PHP Ext Pcntl
+      ansible.builtin.shell: |
+        cd /tmp
+        wget https://www.php.net/distributions/php-7.2.34.tar.gz
+        tar -xzvf ./php-7.2.34.tar.gz
+        cd /tmp/php-7.2.34/ext/pcntl/
+        phpize
+        ./configure
+        make && make install
+        echo extension=pcntl.so > /etc/php/7.2/php.ini
+        rm -rf /tmp/php-7.2.34
+
+    - name: Install-Nginx
+      ansible.builtin.apt:
+        name: nginx
+
+    - name: Install a proxysql.deb package from the internet
+      ansible.builtin.apt:
+        deb: https://github.com/sysown/proxysql/releases/download/v2.5.1/proxysql_2.5.1-ubuntu22_amd64.deb
+
+    # https://docs.ansible.com/ansible/latest/collections/community/general/snap_module.html
+    - name: Install amazon-ssm-agent
+      community.general.snap:
+        name: amazon-ssm-agent
+        classic: true
+  
+    # 下面階段開始安裝 Codedeploy Agent
+    - name: Install Ruby
+      ansible.builtin.apt:
+        name: ruby-full
+
+    # 安裝說明 https://docs.aws.amazon.com/zh_tw/codedeploy/latest/userguide/codedeploy-agent-operations-install-ubuntu.html
+    # 新版本發布 => https://github.com/aws/aws-codedeploy-agent/issues/349
+    - name: Install a codedeploy-agent package from the internet
+      ansible.builtin.apt:
+        deb: https://aws-codedeploy-us-east-2.s3.us-east-2.amazonaws.com/releases/codedeploy-agent_1.5.0-57_all.deb
+
+    - name: Install CloudWatch Log Agent from the internet
+      ansible.builtin.apt:
+        deb: https://s3.amazonaws.com/amazoncloudwatch-agent/debian/amd64/latest/amazon-cloudwatch-agent.deb
+
+    - name: Install aws-cli
+      ansible.builtin.shell: |
+        cd /tmp
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        rm -rf /tmp/aws
+
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_module.html
+    - name: Make sure a service amazon-ssm-agent is running and enabled
+      ansible.builtin.systemd:
+        state: started
+        name: snap.amazon-ssm-agent.amazon-ssm-agent.service
+        enabled: true
+
+    - name: Make sure a service php7.2-fpm is running and enabled
+      ansible.builtin.systemd:
+        state: started
+        name: php7.2-fpm
+        enabled: true
+
+    - name: Make sure a service nginx is running and enabled
+      ansible.builtin.systemd:
+        state: started
+        name: nginx
+        enabled: true
+
+    - name: Make sure a service proxysql is running and enabled
+      ansible.builtin.systemd:
+        state: started
+        name: proxysql
+        enabled: true

@@ -1,0 +1,2 @@
+[webserver]
+IP-ADDRESS ansible_user=帳號 ansible_password=密碼 ansible_sudo_pass=你的sudo密碼
